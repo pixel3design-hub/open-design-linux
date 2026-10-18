@@ -22,8 +22,9 @@ Or clone and run `./install.sh`. The script is version-aware:
 
 - **Not installed** → installs the latest build.
 - **Already latest** → prints `already installed` and exits without
-  re-downloading the ~1.8G AppImage.
-- **Update available** → asks for confirmation before downloading.
+  re-downloading the ~550 MB AppImage.
+- **Update available** → asks for confirmation before downloading, and shows
+  the real download size (queried from the release CDN).
   Pass `--yes` (or set `OPEN_DESIGN_ASSUME_YES=1`) to update
   non-interactively, e.g.
   `curl -fsSL .../install.sh | bash -s -- --yes`.
@@ -48,9 +49,9 @@ This installs:
   registers the `od://` scheme)
 - `~/.local/share/icons/hicolor/512x512/apps/open-design-linux.png`
 
-First launch takes ~10 seconds because the AppImage self-extracts to `/tmp`
-(`--appimage-extract-and-run`; direct FUSE mounts make the daemon time out —
-see upstream `tools/pack/README.md`).
+First launch can take ~60 seconds because the AppImage self-extracts to
+`/tmp` (a ~2 GB tree; `--appimage-extract-and-run`; direct FUSE mounts make
+the daemon time out — see upstream `tools/pack/README.md`).
 
 ## Uninstall
 

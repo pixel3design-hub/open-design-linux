@@ -10,7 +10,7 @@
 # Behavior:
 #   - Not installed            -> installs the latest build.
 #   - Installed, latest         -> prints "Already up to date" and does nothing
-#                                  (the ~1.8G AppImage is NOT re-downloaded).
+#                                  (the ~550 MB AppImage is NOT re-downloaded).
 #   - Installed, outdated      -> asks for confirmation before updating,
 #                                  unless --yes (or OPEN_DESIGN_ASSUME_YES=1).
 #   - --check                   -> only reports installed vs latest version
@@ -118,6 +118,25 @@ require install
 
 base_url="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
 
+# Human-readable byte count, e.g. 555970594 -> "531MiB".
+human_size() {
+  local bytes="$1"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec-i --suffix=B "$bytes"
+  else
+    printf '%s bytes' "$bytes"
+  fi
+}
+
+# Ask the release CDN for the AppImage size via HTTP HEAD (a few hundred
+# bytes); echoes the byte count, or returns non-zero if it can't be read.
+fetch_remote_size() {
+  local headers
+  headers="$(curl -fsIL --retry 2 --retry-delay 2 \
+    "${base_url}/${ASSET_APPIMAGE}" 2>/dev/null)" || return 1
+  printf '%s' "$headers" | grep -i '^content-length:' | tail -n 1 | tr -dc '0-9'
+}
+
 # Fetch the latest published version using the tiny VERSION asset, falling
 # back to the GitHub release metadata (release `name` is "Open Design Linux
 # <version>") for releases built before the VERSION asset existed.
@@ -157,13 +176,23 @@ if [[ -f "$APPIMAGE_PATH" ]]; then
   [[ -n "$installed_version" ]] || installed_version="unknown"
 fi
 
+# Resolve the real download size for the messages below (--check exits before
+# this point, so it stays metadata-only).
+size_note=""
+if (( CHECK_ONLY == 0 )); then
+  appimage_size="$(fetch_remote_size || true)"
+  if [[ "$appimage_size" =~ ^[0-9]+$ ]]; then
+    size_note=" ($(human_size "$appimage_size") download)"
+  fi
+fi
+
 if (( FORCE == 0 )); then
   if [[ -z "$installed_version" ]]; then
     if (( CHECK_ONLY == 1 )); then
       info "Open Design is not installed. Latest available: ${remote_version}."
       exit 1
     fi
-    info "No existing installation found — installing Open Design ${remote_version}..."
+    info "No existing installation found — installing Open Design ${remote_version}${size_note}..."
   elif [[ "$installed_version" == "$remote_version" ]]; then
     ok "Open Design ${remote_version} is already installed. No action needed."
     exit 0
@@ -172,7 +201,7 @@ if (( FORCE == 0 )); then
       info "Update available: ${installed_version} -> ${remote_version}."
       exit 1
     fi
-    info "Update available: ${installed_version} -> ${remote_version} (~1.8G download)."
+    info "Update available: ${installed_version} -> ${remote_version}${size_note}."
     if (( ASSUME_YES == 0 )); then
       # stdin may be a pipe (curl ... | bash), so prompt on /dev/tty.
       if [[ -r /dev/tty ]]; then
@@ -213,7 +242,7 @@ printf '%s\n' "$remote_version" > "$VERSION_PATH"
 info "Installing launcher wrapper..."
 # The AppImage's built-in --appimage-extract-and-run always extracts to the same
 # deterministic /tmp/appimage_extracted_<hash> directory. If a run is killed
-# mid-extraction (e.g. /tmp fills up — the tree is ~1.8G), the corrupt tree is
+# mid-extraction (e.g. /tmp fills up — the tree is ~2G), the corrupt tree is
 # silently reused on every later launch and the app dies on missing chunks.
 # The wrapper extracts to a fresh directory and atomically swaps it in instead.
 cat > "$WRAPPER_PATH" <<'WRAPPER'
@@ -301,4 +330,4 @@ command -v xdg-mime >/dev/null 2>&1 && \
 
 ok "Installed Open Design ${remote_version}. 'Open Design' now appears in your app launcher."
 ok "Re-run this script any time to check for updates; your data is not touched."
-ok "First launch can take ~60s (the launcher extracts the 1.8G AppImage to /tmp); later launches are faster."
+ok "First launch can take ~60s (the launcher extracts the ~2G tree to /tmp); later launches are faster."
