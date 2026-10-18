@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/pourmirzai/open-design-linux/main/i
 Or clone and run `./install.sh`. The script is version-aware:
 
 - **Not installed** → installs the latest build.
-- **Already latest** → prints `already installed` and exits without
+- **Already latest** → refreshes the launcher wrapper and menu entry without
   re-downloading the ~550 MB AppImage.
 - **Update available** → asks for confirmation before downloading, and shows
   the real download size (queried from the release CDN).

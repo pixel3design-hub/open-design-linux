@@ -9,8 +9,9 @@
 #
 # Behavior:
 #   - Not installed            -> installs the latest build.
-#   - Installed, latest         -> prints "Already up to date" and does nothing
-#                                  (the ~550 MB AppImage is NOT re-downloaded).
+#   - Installed, latest         -> refreshes the launcher wrapper and menu
+#                                  entry; the ~550 MB AppImage is NOT
+#                                  re-downloaded.
 #   - Installed, outdated      -> asks for confirmation before updating,
 #                                  unless --yes (or OPEN_DESIGN_ASSUME_YES=1).
 #   - --check                   -> only reports installed vs latest version
@@ -109,6 +110,110 @@ uninstall() {
   ok "Uninstall complete."
 }
 
+write_wrapper() {
+  mkdir -p "$BIN_DIR"
+  info "Installing launcher wrapper..."
+  # The AppImage's built-in --appimage-extract-and-run always extracts to the
+  # same deterministic /tmp/appimage_extracted_<hash> directory. If a run is
+  # killed mid-extraction (e.g. /tmp fills up — the tree is ~2G), the corrupt
+  # tree is silently reused on every later launch and the app dies on missing
+  # chunks. The wrapper extracts to a fresh directory and atomically swaps it
+  # in instead.
+  cat > "$WRAPPER_PATH" <<'WRAPPER'
+#!/usr/bin/env bash
+# Open Design launcher: fresh AppImage extraction with atomic swap.
+set -euo pipefail
+
+APPIMAGE="${OPEN_DESIGN_APPIMAGE:-$HOME/.local/bin/Open-Design.linux.AppImage}"
+BASE="/tmp/open-design-run"
+STAMP="$(date +%s%N)"
+NEW="$BASE/new-$STAMP"
+CUR="$BASE/current"
+OLD="$BASE/old-$STAMP"
+
+[[ -x "$APPIMAGE" ]] || { echo "Open Design AppImage not found at $APPIMAGE" >&2; exit 1; }
+
+# Identity of the installed AppImage (size + mtime). The extracted tree is
+# cached across launches, so the cache must be invalidated whenever this
+# changes — otherwise an updated AppImage keeps launching the stale tree.
+appimage_stamp() {
+  stat -Lc '%s.%Y' "$APPIMAGE" 2>/dev/null
+}
+
+intact() {
+  local dir="$1" expected stored
+  [[ -x "$dir/AppRun" ]] || return 1
+  [[ -s "$dir/snapshot_blob.bin" ]] || return 1
+  [[ -s "$dir/v8_context_snapshot.bin" ]] || return 1
+  [[ -s "$dir/Open Design" ]] || return 1
+  expected="$(appimage_stamp)" || return 1
+  [[ -f "$dir/.od-stamp" ]] || return 1
+  stored="$(cat "$dir/.od-stamp" 2>/dev/null)" || return 1
+  [[ "$stored" == "$expected" ]]
+}
+
+if intact "$CUR"; then
+  exec env -u ELECTRON_RUN_AS_NODE OD_PACKAGED_NAMESPACE=linux \
+    "$CUR/AppRun" --no-sandbox "$@"
+fi
+
+# Refuse to extract into a nearly-full /tmp: a truncated tree breaks the app.
+avail_kb="$(df -Pk /tmp | awk 'NR==2 {print $4}')"
+need_kb="$(( $(stat -Lc %s "$APPIMAGE") * 3 / 1024 + 512 * 1024 ))"
+if (( avail_kb < need_kb )); then
+  echo "Not enough space in /tmp (need ~$((need_kb / 1024))M free, have $((avail_kb / 1024))M)." >&2
+  echo "Free /tmp (rm -rf /tmp/open-design-run /tmp/appimage_extracted_*) and retry." >&2
+  exit 1
+fi
+
+mkdir -p "$NEW"
+( cd "$NEW" && "$APPIMAGE" --appimage-extract >/dev/null )
+appimage_stamp > "$NEW/squashfs-root/.od-stamp" 2>/dev/null || true
+if ! intact "$NEW/squashfs-root"; then
+  rm -rf "$NEW"
+  echo "Extraction produced an incomplete tree (disk full?). Free /tmp and retry." >&2
+  exit 1
+fi
+
+if [[ -d "$CUR" ]]; then
+  mv "$CUR" "$OLD"
+fi
+mv "$NEW/squashfs-root" "$CUR"
+rm -rf "$NEW" "$OLD" "$BASE"/new-* "$BASE"/old-* 2>/dev/null || true
+
+exec env -u ELECTRON_RUN_AS_NODE OD_PACKAGED_NAMESPACE=linux \
+  "$CUR/AppRun" --no-sandbox "$@"
+WRAPPER
+  chmod +x "$WRAPPER_PATH"
+}
+
+write_desktop_entry() {
+  mkdir -p "$DESKTOP_DIR"
+  cat > "${DESKTOP_PATH}.tmp" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Open Design
+GenericName=Open Design
+Comment=Open Design packaged build
+Exec=${WRAPPER_PATH} %U
+Icon=open-design-${NAMESPACE}
+Categories=Development;Utility;
+StartupWMClass=Open Design
+StartupNotify=true
+Terminal=false
+MimeType=x-scheme-handler/od;
+EOF
+  mv -f "${DESKTOP_PATH}.tmp" "$DESKTOP_PATH"
+
+  # Best-effort desktop integration hooks (absent tools are harmless).
+  command -v update-desktop-database >/dev/null 2>&1 && \
+    update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+  command -v gtk-update-icon-cache >/dev/null 2>&1 && \
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+  command -v xdg-mime >/dev/null 2>&1 && \
+    xdg-mime default "open-design-${NAMESPACE}.desktop" x-scheme-handler/od >/dev/null 2>&1 || true
+}
+
 [[ "$COMMAND" != "uninstall" ]] || { uninstall; exit 0; }
 
 require curl
@@ -194,7 +299,11 @@ if (( FORCE == 0 )); then
     fi
     info "No existing installation found — installing Open Design ${remote_version}${size_note}..."
   elif [[ "$installed_version" == "$remote_version" ]]; then
-    ok "Open Design ${remote_version} is already installed. No action needed."
+    # Refresh the launcher and menu entry without re-downloading anything, so
+    # wrapper fixes land even when the AppImage itself is already current.
+    write_wrapper
+    write_desktop_entry
+    ok "Open Design ${remote_version} is already installed. Launcher refreshed — no download needed."
     exit 0
   else
     if (( CHECK_ONLY == 1 )); then
@@ -240,93 +349,12 @@ mv -f "${work_dir}/${ASSET_APPIMAGE}" "$APPIMAGE_PATH"
 printf '%s\n' "$remote_version" > "$VERSION_PATH"
 
 info "Installing launcher wrapper..."
-# The AppImage's built-in --appimage-extract-and-run always extracts to the same
-# deterministic /tmp/appimage_extracted_<hash> directory. If a run is killed
-# mid-extraction (e.g. /tmp fills up — the tree is ~2G), the corrupt tree is
-# silently reused on every later launch and the app dies on missing chunks.
-# The wrapper extracts to a fresh directory and atomically swaps it in instead.
-cat > "$WRAPPER_PATH" <<'WRAPPER'
-#!/usr/bin/env bash
-# Open Design launcher: fresh AppImage extraction with atomic swap.
-set -euo pipefail
-
-APPIMAGE="${OPEN_DESIGN_APPIMAGE:-$HOME/.local/bin/Open-Design.linux.AppImage}"
-BASE="/tmp/open-design-run"
-STAMP="$(date +%s%N)"
-NEW="$BASE/new-$STAMP"
-CUR="$BASE/current"
-OLD="$BASE/old-$STAMP"
-
-[[ -x "$APPIMAGE" ]] || { echo "Open Design AppImage not found at $APPIMAGE" >&2; exit 1; }
-
-intact() {
-  local dir="$1"
-  [[ -x "$dir/AppRun" ]] || return 1
-  [[ -s "$dir/snapshot_blob.bin" ]] || return 1
-  [[ -s "$dir/v8_context_snapshot.bin" ]] || return 1
-  [[ -s "$dir/Open Design" ]] || return 1
-  return 0
-}
-
-if intact "$CUR"; then
-  exec env -u ELECTRON_RUN_AS_NODE OD_PACKAGED_NAMESPACE=linux \
-    "$CUR/AppRun" --no-sandbox "$@"
-fi
-
-# Refuse to extract into a nearly-full /tmp: a truncated tree breaks the app.
-avail_kb="$(df -Pk /tmp | awk 'NR==2 {print $4}')"
-need_kb="$(( $(stat -Lc %s "$APPIMAGE") * 3 / 1024 + 512 * 1024 ))"
-if (( avail_kb < need_kb )); then
-  echo "Not enough space in /tmp (need ~$((need_kb / 1024))M free, have $((avail_kb / 1024))M)." >&2
-  echo "Free /tmp (rm -rf /tmp/open-design-run /tmp/appimage_extracted_*) and retry." >&2
-  exit 1
-fi
-
-mkdir -p "$NEW"
-( cd "$NEW" && "$APPIMAGE" --appimage-extract >/dev/null )
-if ! intact "$NEW/squashfs-root"; then
-  rm -rf "$NEW"
-  echo "Extraction produced an incomplete tree (disk full?). Free /tmp and retry." >&2
-  exit 1
-fi
-
-if [[ -d "$CUR" ]]; then
-  mv "$CUR" "$OLD"
-fi
-mv "$NEW/squashfs-root" "$CUR"
-rm -rf "$NEW" "$OLD" "$BASE"/new-* "$BASE"/old-* 2>/dev/null || true
-
-exec env -u ELECTRON_RUN_AS_NODE OD_PACKAGED_NAMESPACE=linux \
-  "$CUR/AppRun" --no-sandbox "$@"
-WRAPPER
-chmod +x "$WRAPPER_PATH"
+write_wrapper
 
 info "Installing icon and menu entry..."
 mv -f "${work_dir}/${ASSET_ICON}" "$ICON_PATH"
 
-cat > "${DESKTOP_PATH}.tmp" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Open Design
-GenericName=Open Design
-Comment=Open Design packaged build
-Exec=${WRAPPER_PATH} %U
-Icon=open-design-${NAMESPACE}
-Categories=Development;Utility;
-StartupWMClass=Open Design
-StartupNotify=true
-Terminal=false
-MimeType=x-scheme-handler/od;
-EOF
-mv -f "${DESKTOP_PATH}.tmp" "$DESKTOP_PATH"
-
-# Best-effort desktop integration hooks (absent tools are harmless).
-command -v update-desktop-database >/dev/null 2>&1 && \
-  update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
-command -v gtk-update-icon-cache >/dev/null 2>&1 && \
-  gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
-command -v xdg-mime >/dev/null 2>&1 && \
-  xdg-mime default "open-design-${NAMESPACE}.desktop" x-scheme-handler/od >/dev/null 2>&1 || true
+write_desktop_entry
 
 ok "Installed Open Design ${remote_version}. 'Open Design' now appears in your app launcher."
 ok "Re-run this script any time to check for updates; your data is not touched."
