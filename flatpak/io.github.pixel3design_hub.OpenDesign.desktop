@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Open Design
+GenericName=Open Design
+Comment=Open Design packaged build
+Exec=open-design %U
+Icon=io.github.pixel3design_hub.OpenDesign
+Categories=Development;Utility;
+StartupWMClass=Open Design
+StartupNotify=true
+Terminal=false
+MimeType=x-scheme-handler/od;

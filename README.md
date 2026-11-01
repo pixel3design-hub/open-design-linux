@@ -5,7 +5,8 @@ Automated, updatable Linux builds of [nexu-io/open-design](https://github.com/ne
 A GitHub Actions workflow fetches the upstream source (the pinned
 `open-design-v0.26.0` tag by default, or any tag/branch you pick), builds the official packaged AppImage
 with the upstream release-lane recipe (`tools-pack linux build --portable
---to appimage --containerized --require-vela-cli`), and publishes it on a
+--to appimage --containerized --require-vela-cli`), and publishes it — plus an
+RPM and a Flatpak built from the same tree — on a
 rolling [`linux-latest` release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest).
 
 > **Pinned to upstream 0.26.0.** Upstream 0.26.1 is broken, so this fork builds
@@ -46,7 +47,7 @@ Force a reinstall even when already latest: `./install.sh --force`.
 Re-running the script updates the app in place; user data lives under the
 app's XDG config/data roots and is never touched.
 
-This installs:
+This installs (AppImage path only):
 
 - `~/.local/bin/Open-Design.linux.AppImage`
 - `~/.local/bin/Open-Design.linux.version` (installed version marker)
@@ -57,6 +58,28 @@ This installs:
 First launch can take ~60 seconds because the AppImage self-extracts to
 `/tmp` (a ~2 GB tree; `--appimage-extract-and-run`; direct FUSE mounts make
 the daemon time out — see upstream `tools/pack/README.md`).
+
+## Other formats
+
+The same workflow also publishes two packages built from the identical
+packaged tree:
+
+- **RPM** (Fedora / RHEL / openSUSE):
+  ```bash
+  sudo dnf install ./Open-Design-linux-x64.rpm
+  ```
+  Installs to `/opt/Open Design` with a desktop entry; remove with
+  `sudo dnf remove open-design`.
+- **Flatpak** (sandboxed, any distro with Flatpak):
+  ```bash
+  flatpak install --user ./Open-Design-linux-x64.flatpak
+  flatpak run io.github.pixel3design_hub.OpenDesign
+  ```
+  The bundle is a repack of the AppImage tree (`flatpak/` holds the manifest),
+  so it matches the AppImage exactly; the freedesktop 24.08 runtime is pulled
+  from Flathub on install.
+
+Neither package is signed. `install.sh` manages the AppImage only.
 
 ## Uninstall
 
