@@ -26,7 +26,7 @@
 #   ~/.local/share/icons/hicolor/512x512/apps/open-design-linux.png
 set -Eeuo pipefail
 
-REPO="${OPEN_DESIGN_LINUX_REPO:-pourmirzai/open-design-linux}"
+REPO="${OPEN_DESIGN_LINUX_REPO:-pixel3design-hub/open-design-linux}"
 RELEASE_TAG="linux-latest"
 # Upstream 0.26.1 is broken, so the rolling release is pinned to 0.26.0.
 # Refuse to install anything else, even if the release asset is stale.
@@ -65,7 +65,7 @@ Usage:
   --help, -h   show this help
 
 Env:
-  OPEN_DESIGN_LINUX_REPO   GitHub repo to download from (default: pourmirzai/open-design-linux)
+  OPEN_DESIGN_LINUX_REPO   GitHub repo to download from (default: pixel3design-hub/open-design-linux)
   OPEN_DESIGN_ASSUME_YES=1 same as --yes
   OPEN_DESIGN_PINNED_VERSION  expected release version (default: 0.26.0)
 USAGE

@@ -2,11 +2,16 @@
 
 Automated, updatable Linux builds of [nexu-io/open-design](https://github.com/nexu-io/open-design).
 
-A GitHub Actions workflow fetches the upstream source (latest release tag by
-default, or any tag/branch you pick), builds the official packaged AppImage
+A GitHub Actions workflow fetches the upstream source (the pinned
+`open-design-v0.26.0` tag by default, or any tag/branch you pick), builds the official packaged AppImage
 with the upstream release-lane recipe (`tools-pack linux build --portable
 --to appimage --containerized --require-vela-cli`), and publishes it on a
-rolling [`linux-latest` release](https://github.com/pourmirzai/open-design-linux/releases/tag/linux-latest).
+rolling [`linux-latest` release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest).
+
+> **Pinned to upstream 0.26.0.** Upstream 0.26.1 is broken, so this fork builds
+> `open-design-v0.26.0` and `install.sh` refuses any other release version.
+> Override with `upstream_ref` on a manual run, or
+> `OPEN_DESIGN_PINNED_VERSION=<v>` for the installer.
 
 The Vela CLI is bundled in the AppImage (`--require-vela-cli` makes it a hard
 requirement), so cloud login works out of the box — no system-wide `vela`
@@ -15,7 +20,7 @@ install needed.
 ## Install / update
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pourmirzai/open-design-linux/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pixel3design-hub/open-design-linux/main/install.sh | bash
 ```
 
 Or clone and run `./install.sh`. The script is version-aware:
