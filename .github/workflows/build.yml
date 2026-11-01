@@ -1,8 +1,7 @@
-name: Build Open Design Linux
+name: Build Open Design RPM
 
-# Builds installable Linux artifacts (AppImage, RPM, Flatpak) from upstream
-# nexu-io/open-design and publishes them on a rolling "linux-latest" release in
-# this repository.
+# Builds an installable x86_64 RPM from upstream nexu-io/open-design and
+# publishes it on a rolling "linux-latest" release in this repository.
 #
 # Triggers:
 #   - manual (optionally pinning a different upstream tag/branch)
@@ -10,11 +9,9 @@ name: Build Open Design Linux
 #
 # Pinned on purpose: upstream 0.26.1 is broken, so the default is 0.26.0.
 # Bump UPSTREAM_REF_DEFAULT (or pass upstream_ref) once a good release exists.
-
-# The build uses the upstream release-lane recipe:
-#   tools-pack linux build --portable --to appimage --containerized
-# plus --require-vela-cli so the bundled Vela CLI (needed for cloud login)
-# is a hard build failure if missing, not a silent skip.
+#
+# Only the RPM is produced: the upstream recipe runs with `--to dir` (no
+# AppImage), and electron-builder's own rpm target packages that tree.
 
 on:
   workflow_dispatch:
@@ -36,15 +33,15 @@ concurrency:
 
 env:
   UPSTREAM_REPO: nexu-io/open-design
-  # ponytail: hardcoded pin — upstream 0.26.1 is broken. Bump this (and the
-  # same pin in install.sh) when a fixed release lands.
+  # ponytail: hardcoded pin — upstream 0.26.1 is broken. Bump this when a
+  # fixed release lands.
   UPSTREAM_REF_DEFAULT: open-design-v0.26.0
   RELEASE_TAG: linux-latest
   NAMESPACE: linux
 
 jobs:
   build:
-    name: Build linux x64 AppImage
+    name: Build linux x64 RPM
     runs-on: ubuntu-latest
     steps:
       - name: Resolve upstream ref
@@ -117,7 +114,10 @@ jobs:
           printf 'export CI=true\nexport PNPM_HOME=/tmp/pnpm-home\nexport npm_execpath=/tmp/pnpm\nexport PATH="/tmp:$PATH"\n' \
             > "$RUNNER_TEMP/tools-pack/.docker-home/.bash_profile"
 
-      - name: Build AppImage
+      # `--to dir` stops at the unpacked tree: no AppImage is built or thrown
+      # away, the rpm target below consumes linux-unpacked directly. The
+      # containerized lane keeps the payload glibc-compatible for older distros.
+      - name: Build unpacked app
         env:
           VERSION: ${{ steps.ref.outputs.version }}
         run: |
@@ -127,66 +127,25 @@ jobs:
             --namespace "$NAMESPACE" \
             --portable \
             --app-version "$VERSION" \
-            --to appimage \
+            --to dir \
             --containerized \
             --require-vela-cli \
             --json 2>&1 | tee "$RUNNER_TEMP/tools-pack-build.log"
 
-      # The upstream recipe packages the full electron-builder payload. Prune
-      # what a linux x64 package never uses (extra UI locales, non-x64 native
-      # blobs, source maps) before publishing: extract the AppImage, delete,
-      # repack with appimagetool. This shrinks both the release download and
-      # the /tmp extraction tree.
-      - name: Trim AppImage payload
-        run: |
-          set -euo pipefail
-          appimage="$(find "$RUNNER_TEMP/tools-pack" -type f -name '*.AppImage' | head -n 1)"
-          [[ -n "$appimage" ]] || { echo "No AppImage produced" >&2; exit 1; }
-          chmod +x "$appimage"
-          if ! command -v mksquashfs >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq squashfs-tools
-          fi
-          rm -rf "$RUNNER_TEMP/trim"
-          mkdir -p "$RUNNER_TEMP/trim"
-          ( cd "$RUNNER_TEMP/trim" && "$appimage" --appimage-extract >/dev/null )
-          tree="$RUNNER_TEMP/trim/squashfs-root"
-          echo "Before trim: $(du -sh "$tree" | cut -f1)"
-          # en-US.pak is Electron's fallback for every other UI language.
-          find "$tree/locales" -type f ! -name 'en-US.pak' -delete
-          # onnxruntime ships mac/win and arm64 builds; this package is x64-only.
-          ort="$tree/resources/app/node_modules/onnxruntime-node/bin/napi-v3"
-          if [[ -d "$ort" ]]; then
-            find "$ort" -mindepth 2 -maxdepth 2 -type d ! -path '*/linux/x64' -exec rm -rf {} +
-            find "$ort" -mindepth 1 -maxdepth 1 -type d -empty -delete
-          fi
-          find "$tree/resources/app/node_modules" -type f -name '*.map' -delete
-          echo "After trim: $(du -sh "$tree" | cut -f1)"
-          appimagetool="$RUNNER_TEMP/appimagetool.AppImage"
-          curl -fsSL --retry 5 --retry-delay 2 -o "$appimagetool" \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x "$appimagetool"
-          rm -f "$appimage"
-          "$appimagetool" --appimage-extract-and-run --no-appstream "$tree" "$appimage"
-          rm -rf "$RUNNER_TEMP/trim"
-          ls -lh "$appimage"
-
-      # RPM: reuse the assembled linux-unpacked tree through electron-builder's
-      # own rpm target (fpm -> rpmbuild). Only the target runs, nothing is
-      # re-packed. The `rpm` package supplies rpmbuild.
+      # RPM: electron-builder's own rpm target (fpm -> rpmbuild) applied to the
+      # already assembled tree. Only the target runs, nothing is re-packed.
+      # The `rpm` package supplies rpmbuild.
       - name: Build RPM
         env:
           VERSION: ${{ steps.ref.outputs.version }}
         run: |
           set -euo pipefail
-          # electron-builder refuses to run from a package.json that lists it in
-          # "dependencies", so build from a throwaway metadata-only package.
           sudo apt-get update -qq
           sudo apt-get install -y -qq rpm
-          appimage="$(find "$RUNNER_TEMP/tools-pack" -type f -name '*.AppImage' | head -n 1)"
-          unpacked="$(dirname "$appimage")/linux-unpacked"
-          [[ -d "$unpacked" ]] || { echo "linux-unpacked not found" >&2; exit 1; }
-          # Same prunes the AppImage got, so the RPM payload matches it.
+          unpacked="$(find "$RUNNER_TEMP/tools-pack" -type d -name linux-unpacked | head -n 1)"
+          [[ -n "$unpacked" ]] || { echo "linux-unpacked not found" >&2; exit 1; }
+          # Prune what a linux x64 package never uses (extra UI locales, non-x64
+          # native blobs, source maps) so the payload stays small.
           find "$unpacked/locales" -type f ! -name 'en-US.pak' -delete
           find "$unpacked/resources/app/node_modules" -type f -name '*.map' -delete
           ort="$unpacked/resources/app/node_modules/onnxruntime-node/bin/napi-v3"
@@ -195,6 +154,8 @@ jobs:
             find "$ort" -mindepth 1 -maxdepth 1 -type d -empty -delete
           fi
           electron_version="$(node -p "require('./apps/desktop/package.json').devDependencies.electron")"
+          # electron-builder refuses to run from a package.json that lists it in
+          # "dependencies", so build from a throwaway metadata-only package.
           work="$RUNNER_TEMP/rpm-work"
           mkdir -p "$work" dist
           printf '%s\n' \
@@ -211,53 +172,10 @@ jobs:
             -c.linux.category=Development \
             -c.linux.synopsis="Open Design" \
             -c.linux.maintainer="Open Design Contributors" \
+            -c.linux.desktop.entry.MimeType='x-scheme-handler/od;' \
             -c.linux.icon="$GITHUB_WORKSPACE/tools/pack/resources/linux/icon.png" \
             -c.compression=maximum
-          ls -lh "$GITHUB_WORKSPACE/dist"/*.rpm
-
-      # Flatpak: a repack of the AppImage tree, not a compile (see the
-      # manifest). The runtime + SDK download is the slow part of this job.
-      - name: Build Flatpak bundle
-        env:
-          APP_ID: io.github.pixel3design_hub.OpenDesign
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flatpak flatpak-builder imagemagick
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y --noninteractive flathub \
-            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-          appimage="$(find "$RUNNER_TEMP/tools-pack" -type f -name '*.AppImage' | head -n 1)"
-          work="$RUNNER_TEMP/flatpak"
-          mkdir -p "$work" dist
-          cp _ci/flatpak/*.yml _ci/flatpak/*.sh _ci/flatpak/*.desktop "$work"/
-          cp tools/pack/resources/linux/icon.png "$work/icon.png"
-          # Flatpak export rejects icons larger than 512x512; upstream ships 1024.
-          convert "$work/icon.png" -resize 512x512 "$work/icon.png"
-          ( cd "$work" && "$appimage" --appimage-extract >/dev/null )
-          # --disable-rofiles-fuse: CI containers often lack fusermount.
-          flatpak-builder --user --disable-rofiles-fuse --force-clean \
-            --repo="$work/repo" "$work/build" "$work/$APP_ID.yml"
-          flatpak build-bundle \
-            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-            "$work/repo" "dist/Open-Design-linux-x64.flatpak" "$APP_ID"
-          ls -lh dist/*.flatpak
-
-      - name: Collect artifacts
-        env:
-          VERSION: ${{ steps.ref.outputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          appimage="$(find "$RUNNER_TEMP/tools-pack" -type f -name '*.AppImage' | head -n 1)"
-          [[ -n "$appimage" ]] || { echo "No AppImage produced" >&2; exit 1; }
-          mv "$appimage" "dist/Open-Design-linux-x64.AppImage"
-          cp tools/pack/resources/linux/icon.png dist/open-design-icon.png
-          chmod +x dist/Open-Design-linux-x64.AppImage
-          # Tiny version marker so install.sh can compare installed vs latest
-          # without downloading the AppImage first.
-          printf '%s\n' "$VERSION" > dist/VERSION
-          ls -lh dist/
+          ls -lh "$GITHUB_WORKSPACE/dist"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -280,15 +198,9 @@ jobs:
           gh release delete "$RELEASE_TAG" --yes --cleanup-tag || true
           gh release create "$RELEASE_TAG" dist/* \
             --title "Open Design Linux $VERSION" \
-            --notes "Automated Linux (x64) build of [upstream $REF](https://github.com/${UPSTREAM_REPO}/releases/tag/${REF}).
+            --notes "Automated Linux (x64) RPM build of [upstream $REF](https://github.com/${UPSTREAM_REPO}/releases/tag/${REF}).
 
-          - AppImage: \`Open-Design-linux-x64.AppImage\` (install with \`install.sh\` from this repository)
-          - RPM: \`Open-Design-linux-x64.rpm\` (\`sudo dnf install ./Open-Design-linux-x64.rpm\`)
-          - Flatpak: \`Open-Design-linux-x64.flatpak\` (\`flatpak install --user ./Open-Design-linux-x64.flatpak\`)
+          - RPM: \`Open-Design-linux-x64.rpm\` — install with \`sudo dnf install ./Open-Design-linux-x64.rpm\` (Fedora/RHEL/openSUSE)
+          - Installs to \`/opt/Open Design\` with a menu entry; remove with \`sudo dnf remove open-design\`.
           - Bundles the Vela CLI, so cloud login works out of the box.
-          - Non-x64 runtime blobs, extra UI locales, and source maps are pruned to keep the download small.
-
-          Install/update:
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/install.sh | bash
-          \`\`\`"
+          - Non-x64 runtime blobs, extra UI locales, and source maps are pruned to keep the download small."

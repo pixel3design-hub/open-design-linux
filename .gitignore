@@ -1,5 +1,0 @@
-# Local flatpak build leftovers (the unpacked AppImage is ~2 GB).
-flatpak/build/
-flatpak/repo/
-flatpak/squashfs-root/
-flatpak/icon.png

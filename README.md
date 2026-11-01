@@ -1,101 +1,66 @@
-# Open Design Linux
+# Open Design Linux (RPM)
 
-Automated, updatable Linux builds of [nexu-io/open-design](https://github.com/nexu-io/open-design).
+Automated RPM builds of [nexu-io/open-design](https://github.com/nexu-io/open-design) for
+x86_64 Linux.
 
 A GitHub Actions workflow fetches the upstream source (the pinned
-`open-design-v0.26.0` tag by default, or any tag/branch you pick), builds the official packaged AppImage
-with the upstream release-lane recipe (`tools-pack linux build --portable
---to appimage --containerized --require-vela-cli`), and publishes it — plus an
-RPM and a Flatpak built from the same tree — on a
+`open-design-v0.26.0` tag by default, or any tag/branch you pick), assembles
+the app with the upstream packaging recipe (`tools-pack linux build --portable
+--to dir --containerized --require-vela-cli`), and packages that tree with
+electron-builder's rpm target. The result is published on the
 rolling [`linux-latest` release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest).
 
 > **Pinned to upstream 0.26.0.** Upstream 0.26.1 is broken, so this fork builds
-> `open-design-v0.26.0` and `install.sh` refuses any other release version.
-> Override with `upstream_ref` on a manual run, or
-> `OPEN_DESIGN_PINNED_VERSION=<v>` for the installer.
+> `open-design-v0.26.0`. Pass `upstream_ref` on a manual run to build something
+> else.
 
-The Vela CLI is bundled in the AppImage (`--require-vela-cli` makes it a hard
-requirement), so cloud login works out of the box — no system-wide `vela`
-install needed.
+The Vela CLI is bundled (`--require-vela-cli` makes it a hard requirement), so
+cloud login works out of the box — no system-wide `vela` install needed.
 
-## Install / update
+## Install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/pixel3design-hub/open-design-linux/main/install.sh | bash
-```
-
-Or clone and run `./install.sh`. The script is version-aware:
-
-- **Not installed** → installs the latest build.
-- **Already latest** → refreshes the launcher wrapper and menu entry without
-  re-downloading the ~550 MB AppImage.
-- **Update available** → asks for confirmation before downloading, and shows
-  the real download size (queried from the release CDN).
-  Pass `--yes` (or set `OPEN_DESIGN_ASSUME_YES=1`) to update
-  non-interactively, e.g.
-  `curl -fsSL .../install.sh | bash -s -- --yes`.
-
-Check without changing anything (exit 0 = up to date, 1 = update
-available or not installed):
+Download `Open-Design-linux-x64.rpm` from the
+[latest release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest)
+and install it:
 
 ```bash
-./install.sh --check
+sudo dnf install ./Open-Design-linux-x64.rpm     # Fedora / RHEL family
+sudo zypper install ./Open-Design-linux-x64.rpm  # openSUSE
 ```
 
-Force a reinstall even when already latest: `./install.sh --force`.
-
-Re-running the script updates the app in place; user data lives under the
-app's XDG config/data roots and is never touched.
-
-This installs (AppImage path only):
-
-- `~/.local/bin/Open-Design.linux.AppImage`
-- `~/.local/bin/Open-Design.linux.version` (installed version marker)
-- `~/.local/share/applications/open-design-linux.desktop` (launcher entry,
-  registers the `od://` scheme)
-- `~/.local/share/icons/hicolor/512x512/apps/open-design-linux.png`
-
-First launch can take ~60 seconds because the AppImage self-extracts to
-`/tmp` (a ~2 GB tree; `--appimage-extract-and-run`; direct FUSE mounts make
-the daemon time out — see upstream `tools/pack/README.md`).
-
-## Other formats
-
-The same workflow also publishes two packages built from the identical
-packaged tree:
-
-- **RPM** (Fedora / RHEL / openSUSE):
-  ```bash
-  sudo dnf install ./Open-Design-linux-x64.rpm
-  ```
-  Installs to `/opt/Open Design` with a desktop entry; remove with
-  `sudo dnf remove open-design`.
-- **Flatpak** (sandboxed, any distro with Flatpak):
-  ```bash
-  flatpak install --user ./Open-Design-linux-x64.flatpak
-  flatpak run io.github.pixel3design_hub.OpenDesign
-  ```
-  The bundle is a repack of the AppImage tree (`flatpak/` holds the manifest),
-  so it matches the AppImage exactly; the freedesktop 24.08 runtime is pulled
-  from Flathub on install.
-
-Neither package is signed. `install.sh` manages the AppImage only.
-
-## Uninstall
+Or install straight from the release URL:
 
 ```bash
-./install.sh uninstall
+sudo dnf install https://github.com/pixel3design-hub/open-design-linux/releases/download/linux-latest/Open-Design-linux-x64.rpm
 ```
+
+The package is called `open-design`, installs to `/opt/Open Design`, and adds
+a menu entry that registers the `od://` scheme. Upgrade by installing a newer
+rpm over it; user data lives under the app's XDG config/data roots and is never
+touched.
+
+Uninstall:
+
+```bash
+sudo dnf remove open-design
+```
+
+## What's in the package
+
+- `/opt/Open Design/` — the assembled app (Electron payload, bundled Vela CLI,
+  bundled web/daemon/sidecar)
+- `/usr/share/applications/Open Design.desktop` — menu entry
+- `/usr/share/icons/hicolor/1024x1024/apps/Open Design.png` — icon
+
+Non-x64 runtime blobs, extra UI locales, and source maps are pruned during the
+build, so the download stays ~366 MB.
 
 ## Build triggers
 
 - **Pinned upstream ref**: `open-design-v0.26.0` (see `UPSTREAM_REF_DEFAULT` in
-  the workflow). Upstream 0.26.1 is broken, so it is not built; `install.sh`
-  refuses to install any other version unless `OPEN_DESIGN_PINNED_VERSION` is
-  set. Bump both pins when a fixed release lands.
+  the workflow).
 - **Scheduled**: daily at 04:00 UTC — rebuilds the pinned ref.
-- **Manual**: *Actions → Build Open Design Linux → Run workflow*, with an
+- **Manual**: *Actions → Build Open Design RPM → Run workflow*, with an
   optional upstream tag or branch in `upstream_ref` (empty = pinned ref).
 
-Requirements for the local install: x86_64 Linux. `desktop-file-utils` and
-`gtk-update-icon-cache` are optional (only refresh caches).
+The package is not GPG-signed.
