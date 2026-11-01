@@ -4,9 +4,12 @@ name: Build Open Design Linux
 # publishes it on a rolling "linux-latest" release in this repository.
 #
 # Triggers:
-#   - manual (optionally pinning an upstream tag/branch)
-#   - daily schedule, which picks up the newest upstream release tag
+#   - manual (optionally pinning a different upstream tag/branch)
+#   - daily schedule, rebuilding the pinned upstream ref (UPSTREAM_REF_DEFAULT)
 #
+# Pinned on purpose: upstream 0.26.1 is broken, so the default is 0.26.0.
+# Bump UPSTREAM_REF_DEFAULT (or pass upstream_ref) once a good release exists.
+
 # The build uses the upstream release-lane recipe:
 #   tools-pack linux build --portable --to appimage --containerized
 # plus --require-vela-cli so the bundled Vela CLI (needed for cloud login)
@@ -16,11 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream tag or branch (empty = latest upstream release tag)"
+        description: "Upstream tag or branch (empty = pinned default, see env)"
         required: false
         default: ""
   schedule:
-    # Daily at 04:00 UTC — picks up new upstream releases within a day.
+    # Daily at 04:00 UTC — rebuilds the pinned ref (keeps the release fresh).
     - cron: "0 4 * * *"
 
 permissions:
@@ -32,6 +35,9 @@ concurrency:
 
 env:
   UPSTREAM_REPO: nexu-io/open-design
+  # ponytail: hardcoded pin — upstream 0.26.1 is broken. Bump this (and the
+  # same pin in install.sh) when a fixed release lands.
+  UPSTREAM_REF_DEFAULT: open-design-v0.26.0
   RELEASE_TAG: linux-latest
   NAMESPACE: linux
 
@@ -50,7 +56,7 @@ jobs:
           if [[ -n "$UPSTREAM_REF" ]]; then
             ref="$UPSTREAM_REF"
           else
-            ref="$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)"
+            ref="${UPSTREAM_REF_DEFAULT:?UPSTREAM_REF_DEFAULT must be set}"
           fi
           version="${ref#open-design-v}"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"

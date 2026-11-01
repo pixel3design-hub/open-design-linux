@@ -28,6 +28,9 @@ set -Eeuo pipefail
 
 REPO="${OPEN_DESIGN_LINUX_REPO:-pourmirzai/open-design-linux}"
 RELEASE_TAG="linux-latest"
+# Upstream 0.26.1 is broken, so the rolling release is pinned to 0.26.0.
+# Refuse to install anything else, even if the release asset is stale.
+PINNED_VERSION="${OPEN_DESIGN_PINNED_VERSION:-0.26.0}"
 NAMESPACE="linux"
 APPIMAGE_NAME="Open-Design.${NAMESPACE}.AppImage"
 VERSION_FILENAME="Open-Design.${NAMESPACE}.version"
@@ -64,6 +67,7 @@ Usage:
 Env:
   OPEN_DESIGN_LINUX_REPO   GitHub repo to download from (default: pourmirzai/open-design-linux)
   OPEN_DESIGN_ASSUME_YES=1 same as --yes
+  OPEN_DESIGN_PINNED_VERSION  expected release version (default: 0.26.0)
 USAGE
 }
 
@@ -272,6 +276,11 @@ fetch_remote_version() {
 info "Checking latest version from github.com/${REPO} (${RELEASE_TAG})..."
 remote_version="$(fetch_remote_version)" \
   || fail "Could not determine the latest version. Check your network and try again."
+
+# Upstream 0.26.1 is broken; a stale release asset must not be installed.
+if [[ "$remote_version" != "$PINNED_VERSION" ]]; then
+  fail "Release ${RELEASE_TAG} serves ${remote_version}, but this installer is pinned to ${PINNED_VERSION} (0.26.1 is broken). Re-run the 'Build Open Design Linux' workflow, or set OPEN_DESIGN_PINNED_VERSION=${remote_version} to override."
+fi
 
 installed_version=""
 if [[ -f "$APPIMAGE_PATH" ]]; then

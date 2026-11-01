@@ -61,10 +61,13 @@ the daemon time out — see upstream `tools/pack/README.md`).
 
 ## Build triggers
 
-- **Scheduled**: daily at 04:00 UTC — picks up the newest upstream release.
+- **Pinned upstream ref**: `open-design-v0.26.0` (see `UPSTREAM_REF_DEFAULT` in
+  the workflow). Upstream 0.26.1 is broken, so it is not built; `install.sh`
+  refuses to install any other version unless `OPEN_DESIGN_PINNED_VERSION` is
+  set. Bump both pins when a fixed release lands.
+- **Scheduled**: daily at 04:00 UTC — rebuilds the pinned ref.
 - **Manual**: *Actions → Build Open Design Linux → Run workflow*, with an
-  optional upstream tag or branch in `upstream_ref` (empty = latest release
-  tag).
+  optional upstream tag or branch in `upstream_ref` (empty = pinned ref).
 
 Requirements for the local install: x86_64 Linux. `desktop-file-utils` and
 `gtk-update-icon-cache` are optional (only refresh caches).
