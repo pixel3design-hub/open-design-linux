@@ -3,6 +3,9 @@
 Automated RPM builds of [nexu-io/open-design](https://github.com/nexu-io/open-design) for
 x86_64 Linux.
 
+We only build the RPM package. If you are looking for AppImage package go to:
+[`AppImage` release](https://github.com/pourmirzai/open-design-linux/release/tag/linux-latest)
+
 A GitHub Actions workflow fetches the upstream source (the pinned
 `open-design-v0.26.0` tag by default, or any tag/branch you pick), assembles
 the app with the upstream packaging recipe (`tools-pack linux build --portable
