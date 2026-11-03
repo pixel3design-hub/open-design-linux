@@ -11,8 +11,9 @@ A GitHub Actions workflow fetches the upstream source (the pinned
 `open-design-v0.26.0` tag by default, or any tag/branch you pick), assembles
 the app with the upstream packaging recipe (`tools-pack linux build --portable
 --to dir --containerized --require-vela-cli`), and packages that tree with
-electron-builder's rpm and deb targets. Both are published on the
-rolling [`linux-latest` release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest).
+electron-builder's rpm and deb targets. Each build is published as a release
+tagged `v<VERSION>` (e.g. [`v0.26.0`](https://github.com/pixel3design-hub/open-design-linux/releases/tag/v0.26.0));
+`releases/latest` always points at the newest one.
 
 > **Pinned to upstream 0.26.0.** Upstream 0.26.1 is broken, so this fork builds
 > `open-design-v0.26.0`. Pass `upstream_ref` on a manual run to build something
@@ -24,7 +25,7 @@ cloud login works out of the box — no system-wide `vela` install needed.
 ## Install
 
 Download the package for your distro from the
-[latest release](https://github.com/pixel3design-hub/open-design-linux/releases/tag/linux-latest)
+[latest release](https://github.com/pixel3design-hub/open-design-linux/releases/latest)
 and install it:
 
 ```bash
@@ -38,11 +39,11 @@ sudo dnf install ./Open-Design-linux-x64.rpm
 sudo zypper install ./Open-Design-linux-x64.rpm
 ```
 
-Or straight from the release URL:
+Or straight from the release URL (always the newest build):
 
 ```bash
-sudo apt install https://github.com/pixel3design-hub/open-design-linux/releases/download/linux-latest/Open-Design-linux-x64.deb
-sudo dnf install https://github.com/pixel3design-hub/open-design-linux/releases/download/linux-latest/Open-Design-linux-x64.rpm
+sudo apt install https://github.com/pixel3design-hub/open-design-linux/releases/latest/download/Open-Design-linux-x64.deb
+sudo dnf install https://github.com/pixel3design-hub/open-design-linux/releases/latest/download/Open-Design-linux-x64.rpm
 ```
 
 The package is called `open-design` in both cases, installs to

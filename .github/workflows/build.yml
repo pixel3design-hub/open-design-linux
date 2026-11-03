@@ -1,7 +1,7 @@
 name: Build Open Design Linux packages
 
 # Builds installable x86_64 RPM and DEB packages from upstream
-# nexu-io/open-design and publishes them on a rolling "linux-latest" release
+# nexu-io/open-design and publishes each build as a release tagged v<VERSION>
 # in this repository.
 #
 # Triggers:
@@ -37,7 +37,6 @@ env:
   # ponytail: hardcoded pin — upstream 0.26.1 is broken. Bump this when a
   # fixed release lands.
   UPSTREAM_REF_DEFAULT: open-design-v0.26.0
-  RELEASE_TAG: linux-latest
   NAMESPACE: linux
 
 jobs:
@@ -218,7 +217,10 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      - name: Publish rolling release
+      # One release per upstream version, tagged v<VERSION>: the tag is the
+      # release tag, so `releases/latest/download/<asset>` always resolves to
+      # the newest build. Re-running the same version re-uploads (--clobber).
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           # The checkout's git remote points at the upstream repo; pin gh to
@@ -228,13 +230,23 @@ jobs:
           REF: ${{ steps.ref.outputs.ref }}
         run: |
           set -euo pipefail
-          gh release delete "$RELEASE_TAG" --yes --cleanup-tag || true
-          gh release create "$RELEASE_TAG" dist/* \
-            --title "Open Design Linux $VERSION" \
-            --notes "Automated Linux (x64) packages of [upstream $REF](https://github.com/${UPSTREAM_REPO}/releases/tag/${REF}).
+          tag="v${VERSION}"
+          # The old rolling release only ever carried the rpm; drop it once so
+          # releases/latest points at the versioned one.
+          gh release delete "linux-latest" --yes --cleanup-tag || true
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --latest
+          else
+            gh release create "$tag" dist/* \
+              --target "$GITHUB_SHA" \
+              --latest \
+              --title "Open Design Linux $VERSION" \
+              --notes "Automated Linux (x64) packages of [upstream $REF](https://github.com/${UPSTREAM_REPO}/releases/tag/${REF}).
 
-          - RPM: \`Open-Design-linux-x64.rpm\` — \`sudo dnf install ./Open-Design-linux-x64.rpm\` (Fedora/RHEL/openSUSE)
-          - DEB: \`Open-Design-linux-x64.deb\` — \`sudo apt install ./Open-Design-linux-x64.deb\` (Debian/Ubuntu)
-          - Both install the package \`open-design\` to \`/opt/Open Design\` with a menu entry.
-          - Bundles the Vela CLI, so cloud login works out of the box.
-          - Non-x64 runtime blobs, extra UI locales, and source maps are pruned to keep the download small."
+            - RPM: \`Open-Design-linux-x64.rpm\` — \`sudo dnf install ./Open-Design-linux-x64.rpm\` (Fedora/RHEL/openSUSE)
+            - DEB: \`Open-Design-linux-x64.deb\` — \`sudo apt install ./Open-Design-linux-x64.deb\` (Debian/Ubuntu)
+            - Both install the package \`open-design\` to \`/opt/Open Design\` with a menu entry.
+            - Bundles the Vela CLI, so cloud login works out of the box.
+            - Non-x64 runtime blobs, extra UI locales, and source maps are pruned to keep the download small."
+          fi
