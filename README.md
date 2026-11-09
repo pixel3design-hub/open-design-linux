@@ -75,6 +75,7 @@ Ubuntu 24.04+.
 
 ## Build triggers
 
+- **Push to `main`**: rebuilds the pinned upstream ref.
 - **Pinned upstream ref**: `open-design-v0.27.0` (see `UPSTREAM_REF_DEFAULT` in
   the workflow).
 - **Scheduled**: daily at 04:00 UTC — rebuilds the pinned ref.

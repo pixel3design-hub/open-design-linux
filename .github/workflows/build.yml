@@ -5,6 +5,7 @@ name: Build Open Design Linux packages
 # in this repository.
 #
 # Triggers:
+#   - push to main (rebuilds the pinned upstream ref)
 #   - manual (optionally pinning a different upstream tag/branch)
 #   - daily schedule, rebuilding the pinned upstream ref (UPSTREAM_REF_DEFAULT)
 #
@@ -16,6 +17,8 @@ name: Build Open Design Linux packages
 # AppImage), and electron-builder's own rpm/deb targets package that tree.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       upstream_ref:
