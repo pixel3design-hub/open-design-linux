@@ -1,3 +1,5 @@
+diff --git a/tools/pack/src/linux.ts b/tools/pack/src/linux.ts
+index e9342ce..ec87c14 100644
 --- a/tools/pack/src/linux.ts
 +++ b/tools/pack/src/linux.ts
 @@ -1,5 +1,5 @@
@@ -7,7 +9,7 @@
  import { homedir } from "node:os";
  import { basename, dirname, join, posix } from "node:path";
  import { promisify } from "node:util";
-@@ -511,6 +511,70 @@
+@@ -517,6 +517,70 @@ async function copyResourceTree(config: ToolPackConfig, paths: LinuxPaths): Prom
    });
  }
  
@@ -78,7 +80,7 @@
  // --- Step 4: writeAssembledApp helper ---
  
  async function writeAssembledApp(
-@@ -530,6 +594,25 @@
+@@ -536,6 +600,25 @@ async function writeAssembledApp(
      dependencies[tarball.packageName] = `file:${join(paths.tarballsRoot, tarball.fileName)}`;
    }
  
@@ -104,7 +106,7 @@
    const version = await readPackagedVersion(config);
    const packageVersion = electronBuilderVersionForAppVersion(version);
    const packageJson = {
-@@ -547,6 +630,12 @@
+@@ -553,6 +636,12 @@ async function writeAssembledApp(
    };
    await writeFile(paths.assembledPackageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
  
@@ -116,8 +118,8 @@
 +
    await writeFile(paths.assembledMainEntryPath, renderLinuxPackagedMainEntry(), "utf8");
  
-   await writeFile(
-@@ -571,6 +660,24 @@
+   await writePackagedConfigWithBinding(
+@@ -574,6 +663,24 @@ async function writeAssembledApp(
    );
  
    await runProductionInstall(paths.assembledAppRoot);

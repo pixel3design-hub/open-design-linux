@@ -8,8 +8,9 @@ name: Build Open Design Linux packages
 #   - manual (optionally pinning a different upstream tag/branch)
 #   - daily schedule, rebuilding the pinned upstream ref (UPSTREAM_REF_DEFAULT)
 #
-# Pinned on purpose: upstream 0.26.1 is broken, so the default is 0.26.0.
-# Bump UPSTREAM_REF_DEFAULT (or pass upstream_ref) once a good release exists.
+# Pinned to open-design-v0.27.0. Bump UPSTREAM_REF_DEFAULT (or pass upstream_ref)
+# once a newer release exists, and regenerate patches/open-design-linux-pack.patch
+# against it (`git apply --check` must pass).
 #
 # Only packages are produced: the upstream recipe runs with `--to dir` (no
 # AppImage), and electron-builder's own rpm/deb targets package that tree.
@@ -34,9 +35,7 @@ concurrency:
 
 env:
   UPSTREAM_REPO: nexu-io/open-design
-  # ponytail: hardcoded pin — upstream 0.26.1 is broken. Bump this when a
-  # fixed release lands.
-  UPSTREAM_REF_DEFAULT: open-design-v0.26.0
+  UPSTREAM_REF_DEFAULT: open-design-v0.27.0
   NAMESPACE: linux
 
 jobs:
