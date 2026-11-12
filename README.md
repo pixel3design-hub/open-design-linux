@@ -90,18 +90,6 @@ Ubuntu 24.04+.
   an optional upstream tag or branch in `upstream_ref` (empty = newest upstream
   release tag) and an optional `force` to rebuild an already published version.
 
-## Failure notifications
-
-When a run fails (patch no longer applies, build error, …) a Telegram message is
-sent with the version and the run URL. Set two repository secrets
-(*Settings → Secrets and variables → Actions*):
-
-- `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-- `TELEGRAM_CHAT_ID` — the numeric id: message the bot first, then read it from
-  `https://api.telegram.org/bot<TOKEN>/getUpdates` (DM ids are positive, group
-  ids negative). `@channelname` also works, but only for a *public channel*
-  where the bot is an admin — not for DMs or groups.
-
 Without those secrets the notification step just logs and succeeds (forks keep
 working). GitHub additionally emails whoever triggered the failed run — enable
 it under *Settings → Notifications → Actions*.
