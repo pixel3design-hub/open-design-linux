@@ -5,13 +5,14 @@ name: Build Open Design Linux packages
 # in this repository.
 #
 # Triggers:
-#   - push to main (rebuilds the pinned upstream ref)
-#   - manual (optionally pinning a different upstream tag/branch)
-#   - daily schedule, rebuilding the pinned upstream ref (UPSTREAM_REF_DEFAULT)
+#   - push to main (builds only if that version has no release yet)
+#   - daily schedule: checks upstream for a new release tag and builds only that
+#   - manual: pin a specific upstream tag/branch, or force a rebuild
 #
-# Pinned to open-design-v0.27.0. Bump UPSTREAM_REF_DEFAULT (or pass upstream_ref)
-# once a newer release exists, and regenerate patches/open-design-linux-pack.patch
-# against it (`git apply --check` must pass).
+# The upstream pin is not hardcoded: the newest `open-design-v<semver>` tag is
+# resolved automatically. Something changing in the upstream packaging files will
+# make `git apply` fail loudly (notification) — regenerate
+# patches/open-design-linux-pack.patch against the new tag then.
 #
 # Only packages are produced: the upstream recipe runs with `--to dir` (no
 # AppImage), and electron-builder's own rpm/deb targets package that tree.
@@ -22,11 +23,17 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream tag or branch (empty = pinned default, see env)"
+        description: "Upstream tag or branch (empty = newest upstream release tag)"
         required: false
         default: ""
+      force:
+        description: "Rebuild even if a release for that version already exists"
+        type: boolean
+        required: false
+        default: false
   schedule:
-    # Daily at 04:00 UTC — rebuilds the pinned ref (keeps the release fresh).
+    # Daily at 04:00 UTC — version check only: builds when a new upstream
+    # release tag has no release in this repository yet.
     - cron: "0 4 * * *"
 
 permissions:
@@ -38,36 +45,64 @@ concurrency:
 
 env:
   UPSTREAM_REPO: nexu-io/open-design
-  UPSTREAM_REF_DEFAULT: open-design-v0.27.0
+  # Upstream point releases known to be broken: never build these.
+  UPSTREAM_SKIP: "0.26.1"
   NAMESPACE: linux
 
 jobs:
-  build:
-    name: Build linux x64 packages
+  # Resolves which upstream tag to build and whether there is anything to do.
+  # `skip=true` when the tag is blacklisted or its release already exists, so a
+  # scheduled run with no new upstream version costs a few seconds and no build.
+  resolve:
+    name: Resolve upstream version
     runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      version: ${{ steps.resolve.outputs.version }}
+      skip: ${{ steps.resolve.outputs.skip }}
     steps:
       - name: Resolve upstream ref
-        id: ref
+        id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job, so pin gh to this repository explicitly.
+          GH_REPO: ${{ github.repository }}
           UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          if [[ -n "$UPSTREAM_REF" ]]; then
-            ref="$UPSTREAM_REF"
-          else
-            ref="${UPSTREAM_REF_DEFAULT:?UPSTREAM_REF_DEFAULT must be set}"
+          ref="${UPSTREAM_REF:-}"
+          if [[ -z "$ref" ]]; then
+            ref="$(git ls-remote --tags --refs "https://github.com/${UPSTREAM_REPO}.git" 'open-design-v*' \
+              | awk -F'refs/tags/' '{print $2}' \
+              | grep -E '^open-design-v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)"
           fi
+          [[ -n "$ref" ]] || { echo "::error::no upstream release tag found"; exit 1; }
           version="${ref#open-design-v}"
+          skip=false
+          if [[ " ${UPSTREAM_SKIP:-} " == *" ${version} "* ]]; then
+            echo "::notice::$version is skipped (UPSTREAM_SKIP)"
+            skip=true
+          elif [[ "$FORCE" != "true" ]] && gh release view "v${version}" >/dev/null 2>&1; then
+            echo "::notice::release v${version} already exists"
+            skip=true
+          fi
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building upstream ref: $ref (version $version)"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "Resolved $ref (version $version, skip=$skip)"
 
+  build:
+    name: Build linux x64 packages
+    needs: resolve
+    if: needs.resolve.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout upstream source
         uses: actions/checkout@v6.0.2
         with:
           repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ steps.ref.outputs.ref }}
+          ref: ${{ needs.resolve.outputs.ref }}
           fetch-depth: 1
 
       - name: Checkout CI repo (patches)
@@ -80,8 +115,8 @@ jobs:
       # @open-design/* deps from the npm registry (they are not published) and
       # blocks native build scripts. This patch makes tools-pack write a
       # pnpm-workspace.yaml into the assembled app pinning internal packages to
-      # their packed tarballs and allowing native builds. Re-generate against a
-      # new upstream tag with: patches/open-design-linux-pack.patch
+      # their packed tarballs and allowing native builds. Fails loudly when a new
+      # upstream tag changes those files; regenerate it against that tag then.
       - name: Apply packaging patch
         run: |
           git apply --verbose _ci/patches/open-design-linux-pack.patch
@@ -121,7 +156,7 @@ jobs:
       # containerized lane keeps the payload glibc-compatible for older distros.
       - name: Build unpacked app
         env:
-          VERSION: ${{ steps.ref.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           pnpm exec tools-pack linux build \
@@ -139,7 +174,7 @@ jobs:
       # re-packed. `rpm` supplies rpmbuild; dpkg-deb comes with the runner.
       - name: Build RPM and DEB
         env:
-          VERSION: ${{ steps.ref.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -214,7 +249,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Open-Design-linux-x64-${{ steps.ref.outputs.version }}
+          name: Open-Design-linux-x64-${{ needs.resolve.outputs.version }}
           path: dist/
           retention-days: 14
           if-no-files-found: error
@@ -228,8 +263,8 @@ jobs:
           # The checkout's git remote points at the upstream repo; pin gh to
           # this repository for release operations.
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ steps.ref.outputs.version }}
-          REF: ${{ steps.ref.outputs.ref }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          REF: ${{ needs.resolve.outputs.ref }}
         run: |
           set -euo pipefail
           tag="v${VERSION}"
@@ -252,3 +287,33 @@ jobs:
             - Bundles the Vela CLI, so cloud login works out of the box.
             - Non-x64 runtime blobs, extra UI locales, and source maps are pruned to keep the download small."
           fi
+
+  # Failure notification: one Telegram message (secrets-based). GitHub already
+  # emails whoever triggered the failed run (Settings -> Notifications -> Actions),
+  # so no SMTP action is needed.
+  notify:
+    name: Notify on failure
+    needs: [resolve, build]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VERSION: ${{ needs.resolve.outputs.version || 'unknown' }}
+          REF: ${{ needs.resolve.outputs.ref || 'unknown' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+            echo "Telegram secrets not set, skipping notification"
+            exit 0
+          fi
+          text="Open Design Linux build failed: ${VERSION} (${REF}) - ${RUN_URL}"
+          curl -fsS --retry 3 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}" \
+            -o /dev/null
+          echo "Notification sent"
