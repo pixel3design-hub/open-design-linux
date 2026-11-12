@@ -97,8 +97,10 @@ sent with the version and the run URL. Set two repository secrets
 (*Settings → Secrets and variables → Actions*):
 
 - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-- `TELEGRAM_CHAT_ID` — message the bot first, then read the id from
-  `https://api.telegram.org/bot<TOKEN>/getUpdates` (group ids are negative)
+- `TELEGRAM_CHAT_ID` — the numeric id: message the bot first, then read it from
+  `https://api.telegram.org/bot<TOKEN>/getUpdates` (DM ids are positive, group
+  ids negative). `@channelname` also works, but only for a *public channel*
+  where the bot is an admin — not for DMs or groups.
 
 Without those secrets the notification step just logs and succeeds (forks keep
 working). GitHub additionally emails whoever triggered the failed run — enable
