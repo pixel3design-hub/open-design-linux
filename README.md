@@ -95,13 +95,6 @@ Ubuntu 24.04+.
   an optional upstream tag or branch in `upstream_ref` (empty = newest upstream
   release tag) and an optional `force` to rebuild an already published version.
 
-## Failure notifications
-
-A failed run (resolve, build or packaging) posts one Telegram message. Set
-`TELEGRAM_BOT_TOKEN` (from @BotFather) and `TELEGRAM_CHAT_ID` (message the bot
-first, then read `getUpdates`, or use the negative id of a group) as repository
-secrets.
-
 Without those secrets the notification step just logs and succeeds (forks keep
 working). GitHub additionally emails whoever triggered the failed run — enable
 it under *Settings → Notifications → Actions*.
