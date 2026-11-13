@@ -178,7 +178,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq rpm
+          # imagemagick supplies convert for the icon set (not preinstalled on
+          # the current runner images); rpm supplies rpmbuild.
+          sudo apt-get install -y -qq rpm imagemagick
           unpacked="$(find "$RUNNER_TEMP/tools-pack" -type d -name linux-unpacked | head -n 1)"
           [[ -n "$unpacked" ]] || { echo "linux-unpacked not found" >&2; exit 1; }
           # Prune what a linux x64 package never uses (extra UI locales, non-x64
