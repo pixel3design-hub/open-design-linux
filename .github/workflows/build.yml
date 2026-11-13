@@ -190,6 +190,23 @@ jobs:
             find "$ort" -mindepth 2 -maxdepth 2 -type d ! -path '*/linux/x64' -exec rm -rf {} +
             find "$ort" -mindepth 1 -maxdepth 1 -type d -empty -delete
           fi
+          # Canonical Linux id. Upstream's own Linux recipe uses `open-design`
+          # (iconFileName in tools/pack/src/linux.ts), while the assembled tree
+          # names the binary after the product ("Open Design"). electron-builder
+          # derives the desktop file name, Icon= and the packaged binary path
+          # from executableName, so rename here and let all of them agree.
+          mv "$unpacked/Open Design" "$unpacked/open-design"
+          # hicolor/index.theme only declares 16..512, so a single 1024px icon is
+          # invisible to every icon theme: blank menu icon, and a blank taskbar
+          # icon as well (Electron ignores BrowserWindow.icon on Wayland, KWin
+          # resolves the running app through this entry's Icon=). Ship the
+          # standard sizes instead.
+          icons="$RUNNER_TEMP/icons"
+          mkdir -p "$icons"
+          for size in 16 24 32 48 64 128 256 512; do
+            convert "$GITHUB_WORKSPACE/tools/pack/resources/linux/icon.png" \
+              -resize "${size}x${size}" "$icons/${size}x${size}.png"
+          done
           electron_version="$(node -p "require('./apps/desktop/package.json').devDependencies.electron")"
           export VERSION ELECTRON_VERSION="$electron_version"
           # electron-builder refuses to run from a package.json that lists it in
@@ -214,12 +231,27 @@ jobs:
                 artifactName: "Open-Design-linux-x64.${ext}",
                 compression: "maximum",
                 linux: {
-                  executableName: "Open Design",
-                  category: "Development",
+                  executableName: "open-design",
+                  // A design tool, so Graphics rather than the upstream
+                  // AppImage entry (Development/Utility).
+                  category: "Graphics",
                   synopsis: "Open Design",
                   maintainer: "Open Design Contributors",
-                  icon: `${process.env.GITHUB_WORKSPACE}/tools/pack/resources/linux/icon.png`,
-                  desktop: { entry: { MimeType: "x-scheme-handler/od;" } },
+                  icon: `${process.env.RUNNER_TEMP}/icons`,
+                  desktop: {
+                    entry: {
+                      Name: "Open Design",
+                      GenericName: "Design Tool",
+                      Comment: "Open Design desktop app",
+                      Keywords: "design;graphics;ui;vector;prototype;",
+                      StartupNotify: "true",
+                      // Must match Electron'"'"'s WM_CLASS, which is the product
+                      // name rather than the executable name: KWin associates
+                      // the running window with this entry through it.
+                      StartupWMClass: "Open Design",
+                      MimeType: "x-scheme-handler/od;",
+                    },
+                  },
                 },
                 // Debian 12/Ubuntu 22.04 ship libgtk-3-0, Ubuntu 24.04+ only
                 // libgtk-3-0t64: offer both instead of breaking apt install.
@@ -245,6 +277,36 @@ jobs:
             --prepackaged "$unpacked" \
             -c.directories.output="$GITHUB_WORKSPACE/dist"
           ls -lh "$GITHUB_WORKSPACE/dist"
+
+      # Guard the metadata that was silently wrong in the last releases: icon
+      # sizes missing from the theme index, a non-canonical desktop id, and the
+      # Development category. Fail here instead of shipping it again.
+      - name: Verify package metadata
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/pkgcheck"
+          dpkg-deb -x dist/*.deb "$RUNNER_TEMP/pkgcheck"
+          desktop="$RUNNER_TEMP/pkgcheck/usr/share/applications/open-design.desktop"
+          test -f "$desktop" || { echo "missing open-design.desktop" >&2; exit 1; }
+          for expected in \
+            "Name=Open Design" \
+            "Icon=open-design" \
+            "StartupWMClass=Open Design" \
+            "Categories=Graphics;" \
+            "StartupNotify=true" \
+            "MimeType=x-scheme-handler/od;"; do
+            grep -qx "$expected" "$desktop" || { echo "desktop entry lacks: $expected" >&2; exit 1; }
+          done
+          grep -q '^Exec="/opt/Open Design/open-design"' "$desktop" || {
+            echo "desktop Exec does not point at the canonical binary" >&2; exit 1; }
+          for size in 16 24 32 48 64 128 256 512; do
+            test -f "$RUNNER_TEMP/pkgcheck/usr/share/icons/hicolor/${size}x${size}/apps/open-design.png" || {
+              echo "missing ${size}x${size} icon" >&2; exit 1; }
+          done
+          test -x "$RUNNER_TEMP/pkgcheck/opt/Open Design/open-design"
+          rpm -qpl dist/*.rpm | grep -qx "/usr/share/applications/open-design.desktop"
+          rpm -qpl dist/*.rpm | grep -qx "/usr/share/icons/hicolor/48x48/apps/open-design.png"
+          echo "package metadata OK"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

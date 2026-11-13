@@ -68,9 +68,14 @@ sudo dnf remove open-design
 ## What's in the package
 
 - `/opt/Open Design/` — the assembled app (Electron payload, bundled Vela CLI,
-  bundled web/daemon/sidecar)
-- `/usr/share/applications/Open Design.desktop` — menu entry
-- `/usr/share/icons/hicolor/1024x1024/apps/Open Design.png` — icon
+  bundled web/daemon/sidecar), started by `/opt/Open Design/open-design`
+- `/usr/share/applications/open-design.desktop` — menu entry (`Name=Open Design`,
+  `Icon=open-design`, `StartupWMClass=Open Design`, `Categories=Graphics;`), so it
+  appears under **Graphics** and the running window is associated with it
+- `/usr/share/icons/hicolor/{16,24,32,48,64,128,256,512}x{...}/apps/open-design.png` —
+  icon at the sizes the hicolor theme actually declares (a single 1024px icon is
+  invisible to the theme, which is what previously left the menu and the taskbar
+  icon blank)
 
 Non-x64 runtime blobs, extra UI locales, and source maps are pruned during the
 build, so the downloads stay around 402 MB (rpm) / 461 MB (deb) — measured on
@@ -89,6 +94,13 @@ Ubuntu 24.04+.
 - **Manual**: *Actions → Build Open Design Linux packages → Run workflow*, with
   an optional upstream tag or branch in `upstream_ref` (empty = newest upstream
   release tag) and an optional `force` to rebuild an already published version.
+
+## Failure notifications
+
+A failed run (resolve, build or packaging) posts one Telegram message. Set
+`TELEGRAM_BOT_TOKEN` (from @BotFather) and `TELEGRAM_CHAT_ID` (message the bot
+first, then read `getUpdates`, or use the negative id of a group) as repository
+secrets.
 
 Without those secrets the notification step just logs and succeeds (forks keep
 working). GitHub additionally emails whoever triggered the failed run — enable
