@@ -12,7 +12,7 @@ A GitHub Actions workflow resolves the newest upstream
 packaging recipe (`tools-pack linux build --portable --to dir --containerized
 --require-vela-cli`), and packages that tree with electron-builder's rpm and deb
 targets. Each build is published as a release tagged `v<VERSION>` (e.g.
-[`v0.27.0`](https://github.com/pixel3design-hub/open-design-linux/releases/tag/v0.27.0));
+[`v0.27.1`](https://github.com/pixel3design-hub/open-design-linux/releases/tag/v0.27.1));
 `releases/latest` always points at the newest one.
 
 > **Newest upstream version is built automatically.** A scheduled run only
@@ -78,7 +78,7 @@ sudo dnf remove open-design
   icon blank)
 
 Non-x64 runtime blobs, extra UI locales, and source maps are pruned during the
-build, so the downloads stay around 402 MB (rpm) / 461 MB (deb) — measured on
+build, so the downloads stay around 401 MB (rpm) / 468 MB (deb) — measured on
 the 0.27.x builds.
 
 The deb depends on the usual Electron runtime libraries, listing
