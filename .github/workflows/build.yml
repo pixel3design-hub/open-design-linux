@@ -336,6 +336,12 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
             gh release edit "$tag" --latest
+            # Re-uploading keeps the old tag, so a forced rebuild would leave
+            # the release pointing at the commit that produced the previous
+            # assets. Move the tag onto this build commit (the assets in the
+            # release are the ones this run just built).
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
           else
             gh release create "$tag" dist/* \
               --target "$GITHUB_SHA" \
